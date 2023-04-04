@@ -12,6 +12,7 @@ pub struct CodeGenBuilder {
     attributes: Attributes,
     build_transport: bool,
     disable_comments: HashSet<String>,
+    default_impl: bool
 }
 
 impl CodeGenBuilder {
@@ -57,6 +58,12 @@ impl CodeGenBuilder {
         self
     }
 
+    /// Enable or disable returning automatic unimplemented gRPC error code for generated traits.
+    pub fn default_impl(&mut self, default_impl: bool) -> &mut Self {
+        self.default_impl = default_impl;
+        self
+    }
+
     /// Generate client code based on `Service`.
     ///
     /// This takes some `Service` and will generate a `TokenStream` that contains
@@ -85,6 +92,7 @@ impl CodeGenBuilder {
             self.compile_well_known_types,
             &self.attributes,
             &self.disable_comments,
+            self.default_impl
         )
     }
 }
@@ -97,6 +105,7 @@ impl Default for CodeGenBuilder {
             attributes: Attributes::default(),
             build_transport: true,
             disable_comments: HashSet::default(),
+            default_impl: false
         }
     }
 }

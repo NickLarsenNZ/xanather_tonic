@@ -36,6 +36,7 @@ pub fn configure() -> Builder {
         include_file: None,
         emit_rerun_if_changed: std::env::var_os("CARGO").is_some(),
         disable_comments: HashSet::default(),
+        default_impl: false
     }
 }
 
@@ -169,6 +170,7 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
                 .compile_well_known_types(self.builder.compile_well_known_types)
                 .attributes(self.builder.server_attributes.clone())
                 .disable_comments(self.builder.disable_comments.clone())
+                .default_impl(self.builder.default_impl)
                 .generate_server(&service, &self.builder.proto_path);
 
             self.servers.extend(server);
@@ -240,6 +242,7 @@ pub struct Builder {
     pub(crate) include_file: Option<PathBuf>,
     pub(crate) emit_rerun_if_changed: bool,
     pub(crate) disable_comments: HashSet<String>,
+    pub(crate) default_impl: bool,
 
     out_dir: Option<PathBuf>,
 }
@@ -444,6 +447,15 @@ impl Builder {
     /// explicitly.
     pub fn emit_rerun_if_changed(mut self, enable: bool) -> Self {
         self.emit_rerun_if_changed = enable;
+        self
+    }
+
+    /// When generating services enables or disables the default implementation stubs of returning 'unimplemented' gRPC error code.
+    /// When this is false all gRPC methods must be explicitly implemented.
+    ///
+    /// This defaults to `false`.
+    pub fn default_impl(mut self, enable: bool) -> Self {
+        self.default_impl = enable;
         self
     }
 
