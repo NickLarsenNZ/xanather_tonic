@@ -323,10 +323,28 @@ fn generate_trait_methods<T: Service>(
 
                     #method_doc
                     async fn #name(&self, request: tonic::Request<#req_message>)
-                        -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status>;
+                        -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status> {
+                        Err(tonic::Status::unimplemented("Not yet implemented"))
+                    }
                 }
             },
             (false, true, false) => {
+                let stream = quote::format_ident!("{}Stream", method.identifier());
+                let stream_doc = generate_doc_comment(format!(
+                    " Server streaming response type for the {} method.",
+                    method.identifier()
+                ));
+
+                quote! {
+                    #stream_doc
+                    type #stream: futures_core::Stream<Item = std::result::Result<#res_message, tonic::Status>> + Send + 'static;
+
+                    #method_doc
+                    async fn #name(&self, request: tonic::Request<#req_message>)
+                        -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status>;
+                }
+            },
+            (true, true, true) => {
                 let stream = quote::format_ident!("{}Stream", method.identifier());
                 let stream_doc = generate_doc_comment(format!(
                     " Server streaming response type for the {} method.",
@@ -344,22 +362,6 @@ fn generate_trait_methods<T: Service>(
                     }
                 }
             },
-            (true, true, true) => {
-                let stream = quote::format_ident!("{}Stream", method.identifier());
-                let stream_doc = generate_doc_comment(format!(
-                    " Server streaming response type for the {} method.",
-                    method.identifier()
-                ));
-
-                quote! {
-                    #stream_doc
-                    type #stream: futures_core::Stream<Item = std::result::Result<#res_message, tonic::Status>> + Send + 'static;
-
-                    #method_doc
-                    async fn #name(&self, request: tonic::Request<tonic::Streaming<#req_message>>)
-                        -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status>;
-                }
-            },
             (true, true, false) => {
                 let stream = quote::format_ident!("{}Stream", method.identifier());
                 let stream_doc = generate_doc_comment(format!(
@@ -373,9 +375,7 @@ fn generate_trait_methods<T: Service>(
 
                     #method_doc
                     async fn #name(&self, request: tonic::Request<tonic::Streaming<#req_message>>)
-                        -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status> {
-                        Err(tonic::Status::unimplemented("Not yet implemented"))
-                    }
+                        -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status>;
                 }
             }
         };
