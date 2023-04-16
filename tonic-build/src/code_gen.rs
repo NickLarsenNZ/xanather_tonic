@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
 
-use crate::{Attributes, Service};
+use crate::{prost::ServiceReturnOverrideMap, Attributes, Service};
 
 /// Builder for the generic code generation of server and clients.
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub struct CodeGenBuilder {
     attributes: Attributes,
     build_transport: bool,
     disable_comments: HashSet<String>,
-    default_impl: bool
+    service_return_overrides: ServiceReturnOverrideMap,
 }
 
 impl CodeGenBuilder {
@@ -59,8 +59,11 @@ impl CodeGenBuilder {
     }
 
     /// Enable or disable returning automatic unimplemented gRPC error code for generated traits.
-    pub fn default_impl(&mut self, default_impl: bool) -> &mut Self {
-        self.default_impl = default_impl;
+    pub fn service_return_overrides(
+        &mut self,
+        service_return_overrides: ServiceReturnOverrideMap,
+    ) -> &mut Self {
+        self.service_return_overrides = service_return_overrides;
         self
     }
 
@@ -92,7 +95,7 @@ impl CodeGenBuilder {
             self.compile_well_known_types,
             &self.attributes,
             &self.disable_comments,
-            self.default_impl
+            &self.service_return_overrides,
         )
     }
 }
@@ -105,7 +108,7 @@ impl Default for CodeGenBuilder {
             attributes: Attributes::default(),
             build_transport: true,
             disable_comments: HashSet::default(),
-            default_impl: false
+            service_return_overrides: ServiceReturnOverrideMap::default(),
         }
     }
 }

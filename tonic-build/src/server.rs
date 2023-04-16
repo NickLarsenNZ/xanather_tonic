@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use super::{Attributes, Method, Service};
 use crate::{
     format_method_name, format_method_path, format_service_name, generate_doc_comment,
-    generate_doc_comments, naive_snake_case,
+    generate_doc_comments, naive_snake_case, prost::ServiceReturnOverrideMap,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -28,7 +28,7 @@ pub fn generate<T: Service>(
         compile_well_known_types,
         attributes,
         &HashSet::default(),
-        false
+        &ServiceReturnOverrideMap::default(),
     )
 }
 
@@ -39,7 +39,7 @@ pub(crate) fn generate_internal<T: Service>(
     compile_well_known_types: bool,
     attributes: &Attributes,
     disable_comments: &HashSet<String>,
-    default_impl: bool
+    service_return_overrides: &ServiceReturnOverrideMap,
 ) -> TokenStream {
     let methods = generate_methods(service, emit_package, proto_path, compile_well_known_types);
 
@@ -53,7 +53,7 @@ pub(crate) fn generate_internal<T: Service>(
         compile_well_known_types,
         server_trait.clone(),
         disable_comments,
-        default_impl
+        service_return_overrides,
     );
     let package = if emit_package { service.package() } else { "" };
     // Transport based implementations
@@ -230,7 +230,7 @@ fn generate_trait<T: Service>(
     compile_well_known_types: bool,
     server_trait: Ident,
     disable_comments: &HashSet<String>,
-    default_impl: bool
+    service_return_overrides: &ServiceReturnOverrideMap,
 ) -> TokenStream {
     let methods = generate_trait_methods(
         service,
@@ -238,7 +238,7 @@ fn generate_trait<T: Service>(
         proto_path,
         compile_well_known_types,
         disable_comments,
-        default_impl
+        service_return_overrides,
     );
     let trait_doc = generate_doc_comment(format!(
         " Generated trait containing gRPC methods that should be implemented for use with {}Server.",
@@ -260,7 +260,7 @@ fn generate_trait_methods<T: Service>(
     proto_path: &str,
     compile_well_known_types: bool,
     disable_comments: &HashSet<String>,
-    default_impl: bool
+    service_return_overrides: &ServiceReturnOverrideMap,
 ) -> TokenStream {
     let mut stream = TokenStream::new();
 
@@ -277,40 +277,64 @@ fn generate_trait_methods<T: Service>(
                 generate_doc_comments(method.comment())
             };
 
-        let method = match (method.client_streaming(), method.server_streaming(), default_impl) {
-            (false, false, true) => {
+        // let return_value = match service_return_overrides {};
+        let override_lookup_key = format!("{}.{}", service.name(), method.name());
+        let return_value = service_return_overrides
+            .get(&override_lookup_key)
+            .and_then(|v| {
+                return {
+                    match v {
+                        crate::prost::ServiceReturnOverride::None => None,
+                        crate::prost::ServiceReturnOverride::OkDefault => {
+                            Some(quote! { Ok(tonic::Response::new(#res_message::default())) })
+                        }
+
+                        crate::prost::ServiceReturnOverride::ErrUnimplemented => {
+                            let not_implemented_error = format!("{} is not implemented", method.name());
+                            Some(quote! { Err(tonic::Status::unimplemented(#not_implemented_error)) })
+                        },
+                    }
+                };
+            });
+
+        let method = match (
+            method.client_streaming(),
+            method.server_streaming(),
+            return_value,
+        ) {
+            (false, false, Some(return_value)) => {
                 quote! {
                     #method_doc
                     async fn #name(&self, request: tonic::Request<#req_message>)
                         -> std::result::Result<tonic::Response<#res_message>, tonic::Status> {
-                        Err(tonic::Status::unimplemented("Not yet implemented"))
+                        #return_value
                     }
                 }
-            },
-            (false, false, false) => {
+            }
+            (false, false, None) => {
                 quote! {
                     #method_doc
                     async fn #name(&self, request: tonic::Request<#req_message>)
                         -> std::result::Result<tonic::Response<#res_message>, tonic::Status>;
                 }
-            },
-            (true, false, true) => {
+            }
+            (true, false, Some(return_value)) => {
                 quote! {
                     #method_doc
                     async fn #name(&self, request: tonic::Request<tonic::Streaming<#req_message>>)
                         -> std::result::Result<tonic::Response<#res_message>, tonic::Status> {
-                        Err(tonic::Status::unimplemented("Not yet implemented"))
+                        #return_value
                     }
                 }
-            },
-            (true, false, false) => {
+            }
+            (true, false, None) => {
                 quote! {
                     #method_doc
                     async fn #name(&self, request: tonic::Request<tonic::Streaming<#req_message>>)
                         -> std::result::Result<tonic::Response<#res_message>, tonic::Status>;
                 }
-            },
-            (false, true, true) => {
+            }
+            (false, true, Some(return_value)) => {
                 let stream = quote::format_ident!("{}Stream", method.identifier());
                 let stream_doc = generate_doc_comment(format!(
                     " Server streaming response type for the {} method.",
@@ -324,11 +348,11 @@ fn generate_trait_methods<T: Service>(
                     #method_doc
                     async fn #name(&self, request: tonic::Request<#req_message>)
                         -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status> {
-                        Err(tonic::Status::unimplemented("Not yet implemented"))
+                        #return_value
                     }
                 }
-            },
-            (false, true, false) => {
+            }
+            (false, true, None) => {
                 let stream = quote::format_ident!("{}Stream", method.identifier());
                 let stream_doc = generate_doc_comment(format!(
                     " Server streaming response type for the {} method.",
@@ -343,8 +367,8 @@ fn generate_trait_methods<T: Service>(
                     async fn #name(&self, request: tonic::Request<#req_message>)
                         -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status>;
                 }
-            },
-            (true, true, true) => {
+            }
+            (true, true, Some(return_value)) => {
                 let stream = quote::format_ident!("{}Stream", method.identifier());
                 let stream_doc = generate_doc_comment(format!(
                     " Server streaming response type for the {} method.",
@@ -358,11 +382,11 @@ fn generate_trait_methods<T: Service>(
                     #method_doc
                     async fn #name(&self, request: tonic::Request<#req_message>)
                         -> std::result::Result<tonic::Response<Self::#stream>, tonic::Status> {
-                        Err(tonic::Status::unimplemented("Not yet implemented"))
+                        #return_value
                     }
                 }
-            },
-            (true, true, false) => {
+            }
+            (true, true, None) => {
                 let stream = quote::format_ident!("{}Stream", method.identifier());
                 let stream_doc = generate_doc_comment(format!(
                     " Server streaming response type for the {} method.",

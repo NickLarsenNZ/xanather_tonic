@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use prost_build::{Config, Method, Service};
 use quote::ToTokens;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     io,
     path::{Path, PathBuf},
@@ -36,7 +36,7 @@ pub fn configure() -> Builder {
         include_file: None,
         emit_rerun_if_changed: std::env::var_os("CARGO").is_some(),
         disable_comments: HashSet::default(),
-        default_impl: false
+        service_return_overrides: ServiceReturnOverrideMap::default(),
     }
 }
 
@@ -170,7 +170,7 @@ impl prost_build::ServiceGenerator for ServiceGenerator {
                 .compile_well_known_types(self.builder.compile_well_known_types)
                 .attributes(self.builder.server_attributes.clone())
                 .disable_comments(self.builder.disable_comments.clone())
-                .default_impl(self.builder.default_impl)
+                .service_return_overrides(self.builder.service_return_overrides.clone())
                 .generate_server(&service, &self.builder.proto_path);
 
             self.servers.extend(server);
@@ -242,7 +242,7 @@ pub struct Builder {
     pub(crate) include_file: Option<PathBuf>,
     pub(crate) emit_rerun_if_changed: bool,
     pub(crate) disable_comments: HashSet<String>,
-    pub(crate) default_impl: bool,
+    pub(crate) service_return_overrides: ServiceReturnOverrideMap,
 
     out_dir: Option<PathBuf>,
 }
@@ -450,12 +450,19 @@ impl Builder {
         self
     }
 
-    /// When generating services enables or disables the default implementation stubs of returning 'unimplemented' gRPC error code.
-    /// When this is false all gRPC methods must be explicitly implemented.
+    /// When generating services allows for specifying default service trait
+    /// method implementations. By default, services will require explicit
+    /// implementations.
     ///
-    /// This defaults to `false`.
-    pub fn default_impl(mut self, enable: bool) -> Self {
-        self.default_impl = enable;
+    /// Example:
+    /// ```rs
+    /// todo!()
+    /// ```
+    pub fn service_return_overrides(
+        mut self,
+        service_return_overrides: HashMap<String, ServiceReturnOverride>,
+    ) -> Self {
+        self.service_return_overrides = service_return_overrides;
         self
     }
 
@@ -540,4 +547,21 @@ impl Builder {
     pub fn service_generator(self) -> Box<dyn prost_build::ServiceGenerator> {
         Box::new(ServiceGenerator::new(self))
     }
+}
+
+/// An alias to abstract the underlying type and ensure its usages in the library are correct.
+pub type ServiceReturnOverrideMap = HashMap<String, ServiceReturnOverride>;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum ServiceReturnOverride {
+    /// Leave trait method unimplemented. This forces explicit implementation.
+    /// Default bahaviour.
+    #[default]
+    None,
+
+    /// Return a `Result::Ok` with a `tonic::Response` of the default for the type.
+    OkDefault,
+
+    /// Return a `Result::Error` with a `tonic::Status::unimplemented` and the method name included in the friendly error returned to the client.
+    ErrUnimplemented,
 }

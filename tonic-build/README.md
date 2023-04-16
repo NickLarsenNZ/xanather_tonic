@@ -40,6 +40,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
    Ok(())
 }
 ```
+
+### Override service method return values
+
+```rust
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+   tonic_build::configure()
+        .service_return_overrides(tonic_build::ServiceReturnOverrideMap::from([
+            (String::from("Echo.unary_echo"), ServiceReturnOverride::None), // implied if no mapping is made for the service. trait method implementation therefore required.
+            (String::from("Echo.server_streaming_echo"), ServiceReturnOverride::OkDefault), // return the default value for the response message.
+            (String::from("Echo.client_streaming_echo"), ServiceReturnOverride::ErrUnimplemented), // return the unimplemented error status.
+            // any other service not mapped here will require an explicit trait method implementation.
+        ]))
+        .compile(
+            &["proto/echo/echo.proto"],
+            &["proto/echo"],
+        )?;
+   Ok(())
+}
+```
 See [more examples here](https://github.com/hyperium/tonic/tree/master/examples)
 
 ### Google APIs example

@@ -85,7 +85,7 @@ mod prost;
 
 #[cfg(feature = "prost")]
 #[cfg_attr(docsrs, doc(cfg(feature = "prost")))]
-pub use prost::{compile_protos, configure, Builder};
+pub use prost::{compile_protos, configure, Builder, ServiceReturnOverrideMap};
 
 pub mod manual;
 
